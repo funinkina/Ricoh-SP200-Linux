@@ -12,6 +12,7 @@ The printer has no official Linux driver and is absent from foo2zjs, OpenPrintin
 |---|---|
 | `rastertoricohjbig.c` | CUPS filter source |
 | `ricoh-sp200.ppd` | PPD printer description |
+| `install-macos.sh` | Interactive macOS installer |
 
 ---
 
@@ -32,22 +33,11 @@ sudo apt install libcups2-dev libcupsimage2-dev libjbig-dev jbigkit-bin gcc ghos
 sudo dnf install cups-devel cups-libs jbigkit-devel jbigkit-libs gcc ghostscript
 ```
 
-**macOS**
-```bash
-brew install cups jbigkit
-brew services start cups   # run Homebrew CUPS on port 631
-```
-
-> **Note:** macOS System Integrity Protection (SIP) makes the system CUPS filter
-> directory (`/usr/libexec/cups/filter/`) read-only even for root. Homebrew CUPS
-> installs its own writable filter directory under `$(brew --prefix)/libexec/cups/filter/`
-> and runs a full CUPS daemon that replaces the system one on port 631.
-
 ---
 
 ## Build and Install
 
-### Using make (recommended)
+### Linux — using make (recommended)
 
 ```bash
 # Build and install the filter + PPD
@@ -84,28 +74,22 @@ sudo lpadmin -p Ricoh_SP_200_DDST \
 echo "Hello from Linux" | lpr -P Ricoh_SP_200_DDST
 ```
 
-### Manual steps — macOS
+### macOS
 
 ```bash
-BREW=$(brew --prefix)
-
-# Compile (Homebrew provides cups and jbigkit headers/libs)
-gcc -O2 -I$BREW/include -o rastertoricohjbig rastertoricohjbig.c \
-    -L$BREW/lib -lcups -lcupsimage -ljbig
-
-# Install filter and PPD
-sudo install -m 755 rastertoricohjbig $BREW/libexec/cups/filter/rastertoricohjbig
-sudo install -m 644 ricoh-sp200.ppd   /Library/Printers/PPDs/Contents/Resources/
-
-# Register printer (printer must be plugged in via USB)
-sudo lpadmin -p Ricoh_SP_200_DDST \
-    -v "$(lpinfo -v | grep -i ricoh | awk '{print $2}' | head -1)" \
-    -P /Library/Printers/PPDs/Contents/Resources/ricoh-sp200.ppd \
-    -E
-
-# Test print
-echo "Hello from macOS" | lpr -P Ricoh_SP_200_DDST
+./install-macos.sh              # interactive: builds, installs, adds the printer
+./install-macos.sh --uninstall
 ```
+
+Needs only Xcode Command Line Tools (the script offers to install them). It uses
+the built-in system CUPS, no Homebrew:
+
+- The system filter dir (`/usr/libexec/cups/filter/`) is SIP-protected, so the filter
+  goes to `/Library/Printers/Ricoh/filter/` and the PPD references it by absolute path.
+- jbigkit 2.1 is downloaded (checksum-verified) and compiled into the filter, so the
+  sandboxed CUPS filter has no external dependency.
+- macOS rasterizes only the PPD's imageable area, so the installed PPD makes it
+  full-page — the printer then receives the same full-sheet bitmap as on Linux/Windows.
 
 ---
 
@@ -350,15 +334,14 @@ sudo tail -40 /var/log/cups/error_log
 # Arch:   sudo pacman -S jbigkit
 # Debian: sudo apt install libjbig-dev
 # Fedora: sudo dnf install jbigkit-devel
-# macOS:  brew install jbigkit
 ```
 
-**macOS: filter installs but printer not found by CUPS**
+**macOS: installer says printer not found**
 ```bash
-# Ensure Homebrew CUPS is running (not the system daemon)
-brew services restart cups
-lpinfo -v | grep -i ricoh
+ioreg -p IOUSB -l -w0 | grep -i '"SP 200"'   # is it on USB at all?
+lpinfo -v | grep -i ricoh                    # does CUPS see it?
 ```
+The printer drops off USB when switched off or asleep — power-cycle it and press Enter in the installer.
 
 ---
 
